@@ -675,6 +675,9 @@
         sourceLang: 'อัตโนมัติ (Auto-detect)',
         draftOriginal: '',
         draftTranslated: '',
+        draftSummary: null,
+        draftWordChoices: null,
+        draftIdioms: null,
         characters: oldChars,
         glossary: oldGloss,
         summaries: []
@@ -960,7 +963,14 @@
 
       document.getElementById('originalText').value = active.draftOriginal || '';
       document.getElementById('translatedText').value = active.draftTranslated || '';
-      document.getElementById('consistencyBanner').classList.add('hidden');
+      renderSummary(active.draftSummary ?? null);
+      renderWordChoices(active.draftWordChoices ?? null);
+      renderIdioms(active.draftIdioms ?? null);
+      if ((active.draftOriginal || '').trim() && (active.draftTranslated || '').trim()) {
+        runConsistencyCheck(false);
+      } else {
+        document.getElementById('consistencyBanner').classList.add('hidden');
+      }
 
       renderCharacters();
       renderGlossary();
@@ -1040,6 +1050,9 @@
           sourceLang: document.getElementById('sourceLangSelect').value,
           draftOriginal: '',
           draftTranslated: '',
+          draftSummary: null,
+          draftWordChoices: null,
+          draftIdioms: null,
           characters: [],
           glossary: [],
           summaries: []
@@ -2203,13 +2216,15 @@
     }
 
     function nextChapter() {
+      const active = getActiveNovel();
+      active.draftSummary = null;
+      active.draftWordChoices = null;
+      active.draftIdioms = null;
       document.getElementById('originalText').value = '';
       document.getElementById('translatedText').value = '';
-      document.getElementById('summaryContainer').innerHTML = '<p class="text-slate-400 dark:text-slate-500 italic text-center py-3">กด "แปลและวิเคราะห์บริบท" หรือ "📝 ย่อบทนี้" เพื่อดูสรุปเหตุการณ์ ไดอะล็อกเด่น และอารมณ์ตัวละคร</p>';
-      lastSummaryData = null;
-      lastSummaryPlainText = '';
-      document.getElementById('wordChoicesContainer').innerHTML = '<p class="text-slate-400 dark:text-slate-500 italic text-center py-4">กด "แปลและวิเคราะห์บริบท" เพื่อดูความหมายทั้งหมดของคำและคำแนะนำ</p>';
-      document.getElementById('idiomsContainer').innerHTML = '<p class="text-slate-400 dark:text-slate-500 italic text-center py-4">กด "แปลและวิเคราะห์บริบท" เพื่อดูคำอธิบายสำนวน</p>';
+      renderSummary(null);
+      renderWordChoices(null);
+      renderIdioms(null);
       document.getElementById('consistencyBanner').classList.add('hidden');
       document.getElementById('autoUpdateStatus').classList.add('hidden');
       saveDraftNow();
@@ -2383,10 +2398,16 @@
       return ctx;
     }
 
-    // --- Render Chapter Summary ---
+    // --- Render Chapter Summary, Word Choices & Idioms ---
     function renderSummary(summary) {
       const box = document.getElementById('summaryContainer');
-      if (!summary || (!summary.overview && !summary.key_events?.length)) {
+      if (!summary) {
+        box.innerHTML = '<p class="text-slate-400 dark:text-slate-500 italic text-center py-3">กด "แปลและวิเคราะห์บริบท" หรือ "📝 ย่อบทนี้" เพื่อดูสรุปเหตุการณ์ ไดอะล็อกเด่น และอารมณ์ตัวละคร</p>';
+        lastSummaryData = null;
+        lastSummaryPlainText = '';
+        return;
+      }
+      if (!summary.overview && !summary.key_events?.length && !summary.notable_dialogues?.length && !summary.character_emotions?.length) {
         box.innerHTML = '<p class="text-slate-400 dark:text-slate-500 italic text-center py-3">ไม่มีข้อมูลสรุปสำหรับบทนี้</p>';
         lastSummaryData = null;
         lastSummaryPlainText = '';
@@ -2443,6 +2464,56 @@
       html += `</div>`;
       box.innerHTML = html;
       lastSummaryPlainText = plainLines.join('\n');
+    }
+
+    function renderWordChoices(wordChoices) {
+      const wcBox = document.getElementById('wordChoicesContainer');
+      if (!wcBox) return;
+      if (!Array.isArray(wordChoices)) {
+        wcBox.innerHTML = '<p class="text-slate-400 dark:text-slate-500 italic text-center py-4">กด "แปลและวิเคราะห์บริบท" เพื่อดูความหมายทั้งหมดของคำและคำแนะนำ</p>';
+        return;
+      }
+      if (wordChoices.length === 0) {
+        wcBox.innerHTML = '<p class="text-slate-400 dark:text-slate-500 italic">ไม่พบคำที่มีหลายความหมายเป็นพิเศษในย่อหน้านี้</p>';
+        return;
+      }
+      wcBox.innerHTML = wordChoices.map(w => {
+        const meaningsList = Array.isArray(w.all_meanings) ? w.all_meanings : [];
+        const meaningsHtml = meaningsList.length > 0
+          ? `<div class="flex flex-wrap gap-1 mt-1.5">
+               <span class="text-[11px] text-slate-500 dark:text-slate-400 self-center mr-1">ความหมายทั้งหมด:</span>
+               ${meaningsList.map(m => `<span class="text-[11px] px-2 py-0.5 rounded-full bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-800/80 text-slate-700 dark:text-slate-300">${escapeHtml(m)}</span>`).join('')}
+             </div>`
+          : '';
+        const recText = w.recommended || w.suggested || '';
+        return `
+          <div class="p-3 rounded-lg bg-amber-50/60 dark:bg-amber-950/30 border border-amber-200/70 dark:border-amber-800/60 space-y-1">
+            <div class="font-bold text-slate-800 dark:text-slate-100">${escapeHtml(w.original)}</div>
+            ${meaningsHtml}
+            <div class="text-xs font-semibold text-emerald-700 dark:text-emerald-400 pt-1">✅ แนะนำให้ใช้: "${escapeHtml(recText)}"</div>
+            <div class="text-xs text-slate-600 dark:text-slate-300">${escapeHtml(w.reason)}</div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderIdioms(idioms) {
+      const idBox = document.getElementById('idiomsContainer');
+      if (!idBox) return;
+      if (!Array.isArray(idioms)) {
+        idBox.innerHTML = '<p class="text-slate-400 dark:text-slate-500 italic text-center py-4">กด "แปลและวิเคราะห์บริบท" เพื่อดูคำอธิบายสำนวน</p>';
+        return;
+      }
+      if (idioms.length === 0) {
+        idBox.innerHTML = '<p class="text-slate-400 dark:text-slate-500 italic">ไม่พบสำนวนหรือสแลงเฉพาะในย่อหน้านี้</p>';
+        return;
+      }
+      idBox.innerHTML = idioms.map(i => `
+        <div class="p-2.5 rounded-lg bg-sky-50/60 dark:bg-sky-950/30 border border-sky-200/70 dark:border-sky-800/60">
+          <div class="font-semibold text-sky-900 dark:text-sky-300">${escapeHtml(i.phrase)}</div>
+          <div class="text-xs text-slate-600 dark:text-slate-300 mt-1">${escapeHtml(i.meaning)}</div>
+        </div>
+      `).join('');
     }
 
     // --- Smart Bible Update ---
@@ -2648,9 +2719,14 @@ ${original}
       try {
         const res = await callAI(systemPrompt, userPrompt);
         document.getElementById('translatedText').value = res.translation || '';
+
+        const activeNovel = getActiveNovel();
+        activeNovel.draftSummary = res.chapter_summary || {};
+        activeNovel.draftWordChoices = Array.isArray(res.word_choices) ? res.word_choices : [];
+        activeNovel.draftIdioms = Array.isArray(res.idioms) ? res.idioms : [];
         saveDraftNow();
 
-        renderSummary(res.chapter_summary);
+        renderSummary(activeNovel.draftSummary);
 
         if (autoUpdate && res.bible_updates) {
           const stats = applyBibleUpdates(res.bible_updates);
@@ -2665,42 +2741,8 @@ ${original}
         }
 
         runConsistencyCheck(false);
-
-        const wcBox = document.getElementById('wordChoicesContainer');
-        if (res.word_choices && res.word_choices.length > 0) {
-          wcBox.innerHTML = res.word_choices.map(w => {
-            const meaningsList = Array.isArray(w.all_meanings) ? w.all_meanings : [];
-            const meaningsHtml = meaningsList.length > 0
-              ? `<div class="flex flex-wrap gap-1 mt-1.5">
-                   <span class="text-[11px] text-slate-500 dark:text-slate-400 self-center mr-1">ความหมายทั้งหมด:</span>
-                   ${meaningsList.map(m => `<span class="text-[11px] px-2 py-0.5 rounded-full bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-800/80 text-slate-700 dark:text-slate-300">${escapeHtml(m)}</span>`).join('')}
-                 </div>`
-              : '';
-            const recText = w.recommended || w.suggested || '';
-            return `
-              <div class="p-3 rounded-lg bg-amber-50/60 dark:bg-amber-950/30 border border-amber-200/70 dark:border-amber-800/60 space-y-1">
-                <div class="font-bold text-slate-800 dark:text-slate-100">${escapeHtml(w.original)}</div>
-                ${meaningsHtml}
-                <div class="text-xs font-semibold text-emerald-700 dark:text-emerald-400 pt-1">✅ แนะนำให้ใช้: "${escapeHtml(recText)}"</div>
-                <div class="text-xs text-slate-600 dark:text-slate-300">${escapeHtml(w.reason)}</div>
-              </div>
-            `;
-          }).join('');
-        } else {
-          wcBox.innerHTML = '<p class="text-slate-400 dark:text-slate-500 italic">ไม่พบคำที่มีหลายความหมายเป็นพิเศษในย่อหน้านี้</p>';
-        }
-
-        const idBox = document.getElementById('idiomsContainer');
-        if (res.idioms && res.idioms.length > 0) {
-          idBox.innerHTML = res.idioms.map(i => `
-            <div class="p-2.5 rounded-lg bg-sky-50/60 dark:bg-sky-950/30 border border-sky-200/70 dark:border-sky-800/60">
-              <div class="font-semibold text-sky-900 dark:text-sky-300">${escapeHtml(i.phrase)}</div>
-              <div class="text-xs text-slate-600 dark:text-slate-300 mt-1">${escapeHtml(i.meaning)}</div>
-            </div>
-          `).join('');
-        } else {
-          idBox.innerHTML = '<p class="text-slate-400 dark:text-slate-500 italic">ไม่พบสำนวนหรือสแลงเฉพาะในย่อหน้านี้</p>';
-        }
+        renderWordChoices(activeNovel.draftWordChoices);
+        renderIdioms(activeNovel.draftIdioms);
       } catch (err) {
         alert('เกิดข้อผิดพลาด: ' + err.message);
       } finally {
@@ -2737,7 +2779,10 @@ ${original}
             throw err;
           }
         }
-        renderSummary(res);
+        const activeNovel = getActiveNovel();
+        activeNovel.draftSummary = res || {};
+        saveNovels();
+        renderSummary(activeNovel.draftSummary);
       } catch (err) {
         alert('เกิดข้อผิดพลาด: ' + err.message);
       } finally {
