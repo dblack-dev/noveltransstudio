@@ -2692,6 +2692,27 @@
         setChapter(payload.chapterOrder);
       }
 
+      const active = typeof getActiveNovel === 'function' ? getActiveNovel() : null;
+      if (active) {
+        active.draftSummary = null;
+        active.draftWordChoices = null;
+        active.draftIdioms = null;
+        active.lastShelfRef = {
+          novelId: String(payload.novelId || ''),
+          chapterId: String(payload.chapterId || ''),
+          novelTitle: String(payload.novelTitle || ''),
+          translatedTitle: String(payload.translatedTitle || ''),
+          chapterOrder: payload.chapterOrder ?? null,
+          chapterTitle: String(payload.title || '')
+        };
+        window.__ntLastShelfRef = active.lastShelfRef;
+      }
+      if (typeof renderSummary === 'function') renderSummary(null);
+      if (typeof renderWordChoices === 'function') renderWordChoices(null);
+      if (typeof renderIdioms === 'function') renderIdioms(null);
+      document.getElementById('consistencyBanner')?.classList.add('hidden');
+      document.getElementById('autoUpdateStatus')?.classList.add('hidden');
+
       const origEl = document.getElementById('originalText');
       const transEl = document.getElementById('translatedText');
       if (origEl) origEl.value = String(payload.content || '');
@@ -2717,12 +2738,19 @@
       const active = typeof getActiveNovel === 'function' ? getActiveNovel() : null;
       const novelTitle = active && active.title ? active.title : 'NovelTrans';
       const chapterNum = active && active.currentChapter ? active.currentChapter : 1;
+      const ref = (active && active.lastShelfRef) || window.__ntLastShelfRef || null;
+      const matchesRefChapter = Boolean(ref && ref.chapterOrder !== null && ref.chapterOrder !== undefined && Number(ref.chapterOrder) === Number(chapterNum));
       try {
         localStorage.setItem('peachz_suite_handoff_v1', JSON.stringify({
           target: 'pomehelpmami',
           sourceApp: 'NovelTrans Studio',
           novelTitle,
           chapterOrder: chapterNum,
+          shelfNovelId: ref?.novelId || '',
+          shelfChapterId: matchesRefChapter ? (ref.chapterId || '') : '',
+          shelfNovelTitle: ref?.novelTitle || novelTitle,
+          shelfChapterOrder: chapterNum,
+          shelfChapterTitle: matchesRefChapter ? (ref.chapterTitle || '') : '',
           title: `${novelTitle} - ตอนที่ ${chapterNum}`,
           originalText,
           translatedText,
