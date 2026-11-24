@@ -2338,15 +2338,31 @@
       }
 
       let apiKey = '';
+      let cloudCfg = {};
       try {
         const rawCfg = localStorage.getItem('peachz_cloud_translate_v1');
-        if (rawCfg) apiKey = String(JSON.parse(rawCfg)?.apiKey || '').trim();
+        if (rawCfg) {
+          cloudCfg = JSON.parse(rawCfg) || {};
+          apiKey = String(cloudCfg?.apiKey || '').trim();
+        }
       } catch (e) {}
 
       if (!apiKey) {
         const goHub = confirm('ยังไม่ได้ใส่ Google Cloud Translation API Key\n\nกด OK เพื่อเปิดหน้า Peachz Hub (แท็บ "🔑 คีย์ API & ลิมิต Google") ไปใส่คีย์ครั้งเดียวได้เลยครับ');
         if (goHub) window.open('https://dblack-dev.github.io/peachz-hub/', '_blank', 'noopener');
         return;
+      }
+
+      const curDate = new Date();
+      const curMonth = `${curDate.getFullYear()}-${String(curDate.getMonth() + 1).padStart(2, '0')}`;
+      const autoCutoffEnabled = cloudCfg?.autoCutoffEnabled !== false;
+      const monthlyCharLimit = Math.max(10000, Number(cloudCfg?.monthlyCharLimit || 480000));
+      const usedThisMonth = cloudCfg?.month === curMonth ? Number(cloudCfg?.monthChars || 0) : 0;
+      if (autoCutoffEnabled && (usedThisMonth + rawText.length) > monthlyCharLimit) {
+        const proceedOver = confirm(
+          `🛡️ แจ้งเตือนเพดานฟรี Cloud Translate\n\nเดือนนี้ใช้ไปแล้ว ${usedThisMonth.toLocaleString('th-TH')} ตัวอักษร (รวมบทนี้อีก ~${rawText.length.toLocaleString('th-TH')} จะเกินเพดาน ${monthlyCharLimit.toLocaleString('th-TH')} ตัวอักษร)\n\nกด Cancel เพื่อหยุดไว้ก่อน (ไม่เสียเงิน) หรือกด OK หากต้องการยืนยันแปลต่อผ่าน Cloud`
+        );
+        if (!proceedOver) return;
       }
 
       const active = typeof getActiveNovel === 'function' ? getActiveNovel() : null;
@@ -3370,9 +3386,12 @@ ${trans}
               if (raw) cfg = JSON.parse(raw) || {};
             } catch (e) {}
             const now = Date.now();
+            const rawLimit = Number(cfg.monthlyCharLimit || 480000);
             const nextCfg = {
               apiKey: String(cfg.apiKey || '').trim(),
               preferCloudInShelf: cfg.preferCloudInShelf !== false,
+              autoCutoffEnabled: cfg.autoCutoffEnabled !== false,
+              monthlyCharLimit: Number.isFinite(rawLimit) && rawLimit >= 10000 ? Math.round(rawLimit) : 480000,
               month: curMonth,
               monthChars: (cfg.month === curMonth ? Number(cfg.monthChars || 0) : 0) + add,
               updatedAt: now
