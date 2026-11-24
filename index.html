@@ -271,6 +271,9 @@
         <button id="translateBtn" onclick="translateAndAnalyze()" class="bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 dark:disabled:bg-indigo-800 text-white font-semibold px-4 py-2.5 rounded-xl shadow-sm transition flex items-center gap-2 text-sm sm:text-base">
           <span>🪄</span> แปลและวิเคราะห์บริบท
         </button>
+        <button id="btnCloudQuickTranslate" type="button" onclick="quickTranslateWithGoogleCloud()" title="แปลด่วนด้วย Google Cloud Translation API (ล็อกชื่อตัวละคร &amp; คำศัพท์จาก Bible)" class="bg-sky-600 hover:bg-sky-700 disabled:bg-sky-300 dark:disabled:bg-sky-800 text-white font-medium px-3.5 py-2.5 rounded-xl shadow-sm transition flex items-center gap-1.5 text-sm">
+          <span>🌐</span> แปลด่วน Cloud
+        </button>
         <button id="extractBtn" onclick="extractCharactersFromText()" class="bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 dark:disabled:bg-emerald-800 text-white font-medium px-3.5 py-2.5 rounded-xl shadow-sm transition flex items-center gap-1.5 text-sm">
           <span>🔍</span> สกัดตัวละคร/ศัพท์
         </button>
@@ -2324,6 +2327,146 @@
       }
     }
 
+    async function quickTranslateWithGoogleCloud() {
+      const origEl = document.getElementById('originalText');
+      const transEl = document.getElementById('translatedText');
+      const btn = document.getElementById('btnCloudQuickTranslate');
+      const rawText = String(origEl ? origEl.value : '').trim();
+      if (!rawText) {
+        alert('กรุณาวางข้อความต้นฉบับก่อนกดแปลครับ');
+        return;
+      }
+
+      let apiKey = '';
+      try {
+        const rawCfg = localStorage.getItem('peachz_cloud_translate_v1');
+        if (rawCfg) apiKey = String(JSON.parse(rawCfg)?.apiKey || '').trim();
+      } catch (e) {}
+
+      if (!apiKey) {
+        const goHub = confirm('ยังไม่ได้ใส่ Google Cloud Translation API Key\n\nกด OK เพื่อเปิดหน้า Peachz Hub (แท็บ "🔑 คีย์ API & ลิมิต Google") ไปใส่คีย์ครั้งเดียวได้เลยครับ');
+        if (goHub) window.open('https://dblack-dev.github.io/peachz-hub/', '_blank', 'noopener');
+        return;
+      }
+
+      const active = typeof getActiveNovel === 'function' ? getActiveNovel() : null;
+      const termMap = new Map();
+      if (active) {
+        [...(active.characters || []), ...(active.glossary || [])].forEach((entry) => {
+          const orig = String(entry?.orig || '').trim();
+          const thai = String(entry?.thai || '').trim();
+          if (orig && thai && !termMap.has(orig)) termMap.set(orig, thai);
+        });
+      }
+      const entries = Array.from(termMap.entries())
+        .map(([src, dst]) => ({ src, dst }))
+        .sort((a, b) => b.src.length - a.src.length);
+
+      const applyPlaceholders = (text) => {
+        let out = String(text || '');
+        entries.forEach((e, idx) => {
+          if (out.includes(e.src)) out = out.split(e.src).join(`[[${idx}]]`);
+        });
+        return out;
+      };
+      const restorePlaceholders = (text) => {
+        let out = String(text || '').replace(/\[\s*\[\s*(\d+)\s*\]\s*\]/g, (full, numStr) => {
+          const idx = parseInt(numStr, 10);
+          return entries[idx] ? entries[idx].dst : full;
+        });
+        entries.forEach((e) => {
+          if (out.includes(e.src)) out = out.split(e.src).join(e.dst);
+        });
+        return out;
+      };
+
+      const lines = rawText.replace(/\r\n/g, '\n').split('\n').map((l) => l.trim()).filter(Boolean);
+      const expanded = [];
+      for (const origLine of lines) {
+        const encoded = applyPlaceholders(origLine);
+        if (encoded.length <= 3500) {
+          expanded.push(encoded);
+        } else {
+          let rest = encoded;
+          while (rest.length > 0) {
+            let cut = Math.min(rest.length, 3200);
+            if (cut < rest.length) {
+              const punc = Math.max(rest.lastIndexOf('。', cut), rest.lastIndexOf('.', cut), rest.lastIndexOf(' ', cut));
+              if (punc > 800) cut = punc + 1;
+            }
+            expanded.push(rest.slice(0, cut));
+            rest = rest.slice(cut);
+          }
+        }
+      }
+
+      const batches = [];
+      let curBatch = [];
+      let curChars = 0;
+      for (const item of expanded) {
+        if (curBatch.length >= 40 || (curBatch.length > 0 && curChars + item.length > 4000)) {
+          batches.push(curBatch);
+          curBatch = [item];
+          curChars = item.length;
+        } else {
+          curBatch.push(item);
+          curChars += item.length;
+        }
+      }
+      if (curBatch.length) batches.push(curBatch);
+
+      const prevHtml = btn ? btn.innerHTML : '';
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span>⏳</span> กำลังแปล Cloud...';
+      }
+
+      try {
+        const endpoint = `https://translation.googleapis.com/language/translate/v2?key=${encodeURIComponent(apiKey)}`;
+        const outLines = [];
+        let sentChars = 0;
+
+        for (const batch of batches) {
+          const res = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json;charset=UTF-8' },
+            body: JSON.stringify({ q: batch, target: 'th', format: 'text' })
+          });
+          const body = await res.json().catch(() => null);
+          if (!res.ok) {
+            throw new Error(body?.error?.message || `HTTP ${res.status}`);
+          }
+          const translations = body?.data?.translations;
+          if (!Array.isArray(translations)) {
+            throw new Error('ไม่สามารถอ่านผลลัพธ์จาก Google Cloud Translation API ได้');
+          }
+          sentChars += batch.reduce((s, x) => s + x.length, 0);
+          translations.forEach((tr) => {
+            outLines.push(restorePlaceholders(tr?.translatedText || ''));
+          });
+        }
+
+        if (transEl) {
+          transEl.value = outLines.join('\n\n').trim();
+          if (typeof saveDraftNow === 'function') saveDraftNow();
+          else if (typeof scheduleDraftSave === 'function') scheduleDraftSave();
+        }
+        if (sentChars > 0) {
+          window.ntCloudTranslateBridge?.recordChars(sentChars);
+        }
+        if (btn) {
+          btn.innerHTML = '<span>✅</span> แปล Cloud แล้ว';
+          setTimeout(() => { if (btn) btn.innerHTML = prevHtml || '<span>🌐</span> แปลด่วน Cloud'; }, 2000);
+        }
+      } catch (err) {
+        console.error('quickTranslateWithGoogleCloud error:', err);
+        alert('แปลด่วน Cloud ไม่สำเร็จ: ' + (err?.message || 'เกิดข้อผิดพลาด'));
+        if (btn) btn.innerHTML = prevHtml || '<span>🌐</span> แปลด่วน Cloud';
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
     function copyTranslation() {
       const text = document.getElementById('translatedText').value;
       if (!text) return;
@@ -3203,6 +3346,56 @@ ${trans}
         activeUser = user;
         setOwnerGateState({ locked: false, loading: false, showWarning: '' });
         renderAuthUI(user);
+
+        // Sync shared Google Cloud Translation key doc cleanly (read/update peachzCloudTranslate)
+        getDoc(doc(db, 'users', user.uid, 'sync', 'peachzCloudTranslate')).then((snap) => {
+          if (!snap.exists()) return;
+          const data = snap.data();
+          const localRaw = localStorage.getItem('peachz_cloud_translate_v1');
+          const localUpdatedAt = localRaw ? Number(JSON.parse(localRaw)?.updatedAt || 0) : 0;
+          if (Number(data?.updatedAt || 0) >= localUpdatedAt && data?.stateJson) {
+            localStorage.setItem('peachz_cloud_translate_v1', String(data.stateJson));
+          }
+        }).catch(() => {});
+
+        window.ntCloudTranslateBridge = {
+          async recordChars(addChars) {
+            const add = Math.max(0, Math.round(Number(addChars) || 0));
+            if (!add) return;
+            const d = new Date();
+            const curMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+            let cfg = {};
+            try {
+              const raw = localStorage.getItem('peachz_cloud_translate_v1');
+              if (raw) cfg = JSON.parse(raw) || {};
+            } catch (e) {}
+            const now = Date.now();
+            const nextCfg = {
+              apiKey: String(cfg.apiKey || '').trim(),
+              preferCloudInShelf: cfg.preferCloudInShelf !== false,
+              month: curMonth,
+              monthChars: (cfg.month === curMonth ? Number(cfg.monthChars || 0) : 0) + add,
+              updatedAt: now
+            };
+            try {
+              localStorage.setItem('peachz_cloud_translate_v1', JSON.stringify(nextCfg));
+              const qRaw = localStorage.getItem('peachz_hub_quota_v1');
+              const qObj = qRaw ? JSON.parse(qRaw) : {};
+              qObj.month = curMonth;
+              qObj.translateChars = Math.max(Number(qObj.translateChars || 0) + add, nextCfg.monthChars);
+              localStorage.setItem('peachz_hub_quota_v1', JSON.stringify(qObj));
+            } catch (e) {}
+            if (activeUser) {
+              try {
+                await setDoc(doc(db, 'users', activeUser.uid, 'sync', 'peachzCloudTranslate'), {
+                  stateJson: JSON.stringify(nextCfg),
+                  updatedAt: now,
+                  updatedBy: 'noveltransstudio'
+                });
+              } catch (e) {}
+            }
+          }
+        };
 
         const syncRef = doc(db, 'users', user.uid, 'sync', SYNC_DOC_ID);
         unsubscribeSync = onSnapshot(syncRef, (snap) => {
