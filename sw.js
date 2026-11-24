@@ -3,7 +3,7 @@
  * - CDN (Tailwind / Google Fonts): stale-while-revalidate
  * - Firebase / Google Auth / Firestore / Gemini APIs: ผ่านเน็ตตรง ๆ ไม่แคช
  */
-const VERSION = 'v1.4.0';
+const VERSION = 'v1.5.0';
 const SHELL_CACHE = `noveltrans-shell-${VERSION}`;
 const RUNTIME_CACHE = `noveltrans-runtime-${VERSION}`;
 

@@ -231,6 +231,31 @@
     <!-- Left & Center: Translation Workspace -->
     <main class="flex-1 flex flex-col overflow-y-auto custom-scrollbar p-4 gap-3">
 
+      <!-- Cross-App Handoff Receive Banner (from Peachz Shelf) -->
+      <div id="ntHandoffBanner" class="hidden rounded-xl border-2 border-indigo-400 dark:border-indigo-500 bg-indigo-50/90 dark:bg-indigo-950/60 px-4 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 shrink-0 shadow-sm">
+        <div class="min-w-0 space-y-0.5">
+          <div class="text-xs font-bold text-indigo-700 dark:text-indigo-300 flex items-center gap-1.5">
+            <span>📚</span>
+            <span>ได้รับเนื้อหาต้นฉบับส่งตรงมาจาก Peachz Shelf</span>
+          </div>
+          <div id="ntHandoffMeta" class="text-xs text-slate-700 dark:text-slate-200 truncate font-medium"></div>
+        </div>
+        <div class="flex flex-wrap items-center gap-1.5 shrink-0">
+          <button id="btnNtAcceptHandoff" type="button" onclick="applyNtIncomingHandoff(false)"
+            class="px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-indigo-300 dark:border-indigo-600 hover:bg-indigo-100 dark:hover:bg-slate-700 text-indigo-700 dark:text-indigo-200 text-xs font-semibold transition">
+            📥 วางลงช่องต้นฉบับ
+          </button>
+          <button id="btnNtAcceptAndTranslate" type="button" onclick="applyNtIncomingHandoff(true)"
+            class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-sm transition">
+            🪄 วางและแปลทันที
+          </button>
+          <button id="btnNtDismissHandoff" type="button" onclick="dismissNtIncomingHandoff()"
+            class="px-2.5 py-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-200/70 dark:hover:bg-slate-700 text-xs transition">
+            ปิด
+          </button>
+        </div>
+      </div>
+
       <!-- Textareas Grid -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 h-[56vh] min-h-[440px] shrink-0">
         <!-- Original Text -->
@@ -253,6 +278,7 @@
               <button onclick="openPolishModal()" class="text-xs bg-purple-50 dark:bg-purple-900/50 border border-purple-200 dark:border-purple-700 hover:bg-purple-100 dark:hover:bg-purple-800/60 px-2 py-0.5 rounded text-purple-700 dark:text-purple-200 font-medium">✨ เกลาสำนวน</button>
               <button onclick="exportChapterText()" class="text-xs bg-emerald-50 dark:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-700 hover:bg-emerald-100 dark:hover:bg-emerald-800/60 px-2 py-0.5 rounded text-emerald-700 dark:text-emerald-200 font-medium">💾 เซฟ .txt</button>
               <button id="btnSendToPeachzHaus" type="button" onclick="sendTranslationToPeachzHaus()" class="text-xs bg-rose-50 dark:bg-rose-900/50 border border-rose-200 dark:border-rose-700 hover:bg-rose-100 dark:hover:bg-rose-800/60 px-2 py-0.5 rounded text-rose-700 dark:text-rose-200 font-medium" title="ส่งคำแปลบทนี้ไปจัดหน้าใน Peachz Haus Studio">🍑 ส่งไปจัดหน้า</button>
+              <button id="btnSendToPome" type="button" onclick="sendBothToPome()" class="text-xs bg-amber-50 dark:bg-amber-900/50 border border-amber-300 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-800/60 px-2 py-0.5 rounded text-amber-800 dark:text-amber-200 font-medium" title="ส่งทั้งต้นฉบับและคำแปลไปวางในช่อง ต้นฉบับ + Novel Trans ของน้องหมาช่วยแปลอัตโนมัติ">🐶 ส่งไปพี่ตูบ</button>
               <button onclick="copyTranslation()" id="copyBtn" class="text-xs bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600 px-2 py-0.5 rounded text-slate-700 dark:text-slate-200">คัดลอก</button>
             </div>
           </div>
@@ -828,6 +854,24 @@
       renderQuickSwitchers();
       updateApiStatusDot();
       renderNovelUI();
+      checkNtIncomingHandoff();
+    });
+
+    const onNtFocusOrVisible = () => {
+      if (!document.hidden && typeof setSuiteTitleBadge === 'function') setSuiteTitleBadge(false);
+      if (typeof checkNtIncomingHandoff === 'function') checkNtIncomingHandoff();
+    };
+    window.addEventListener('focus', onNtFocusOrVisible);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) onNtFocusOrVisible();
+    });
+    window.addEventListener('storage', (e) => {
+      if (e.key === 'peachz_suite_handoff_v1' && typeof checkNtIncomingHandoff === 'function') {
+        checkNtIncomingHandoff();
+        if (document.hidden && typeof readNtIncomingHandoff === 'function' && readNtIncomingHandoff() && typeof setSuiteTitleBadge === 'function') {
+          setSuiteTitleBadge(true);
+        }
+      }
     });
 
     // --- Cloud Sync Bridge (Firebase Firestore) ---
@@ -895,6 +939,7 @@
           renderQuickSwitchers();
           updateApiStatusDot();
           renderNovelUI();
+          if (typeof checkNtIncomingHandoff === 'function') checkNtIncomingHandoff();
           return true;
         } catch (e) {
           console.warn('ntCloudBridge applyRemoteState failed:', e);
@@ -2318,13 +2363,13 @@
         alert('ไม่สามารถบันทึกข้อมูลสำหรับส่งต่อได้ครับ');
         return;
       }
-      window.open('https://dblack-dev.github.io/peachz-pwa/?handoff=1', '_blank', 'noopener');
-      const btn = document.getElementById('btnSendToPeachzHaus');
-      if (btn) {
+      dispatchSuiteHandoff('peachz-pwa', 'https://dblack-dev.github.io/peachz-pwa/?handoff=1', 'peachz_pwa_tab', (status) => {
+        const btn = document.getElementById('btnSendToPeachzHaus');
+        if (!btn) return;
         const prev = btn.textContent;
-        btn.textContent = 'ส่งแล้ว ✓';
-        setTimeout(() => { btn.textContent = prev || '🍑 ส่งไปจัดหน้า'; }, 1800);
-      }
+        btn.textContent = status === 'focused' ? 'สลับแท็บ ✓' : (status === 'already_open' ? 'ส่งไปแท็บเดิม 🔔' : 'ส่งแล้ว ✓');
+        setTimeout(() => { btn.textContent = prev || '🍑 ส่งไปจัดหน้า'; }, 2200);
+      });
     }
 
     async function quickTranslateWithGoogleCloud() {
@@ -2481,6 +2526,222 @@
       } finally {
         if (btn) btn.disabled = false;
       }
+    }
+
+    const PEACHZ_SUITE_APP_ID = 'noveltransstudio';
+    const PEACHZ_TITLE_BADGE = '🔔 มีงานใหม่! · ';
+    const PEACHZ_TAB_ID = Math.random().toString(36).slice(2) + '_' + Date.now();
+    const peachzSuiteBus = typeof BroadcastChannel === 'function' ? new BroadcastChannel('peachz_suite_bus_v1') : null;
+
+    function setSuiteTitleBadge(hasPending) {
+      const cur = String(document.title || '');
+      if (hasPending) {
+        if (document.hidden && !cur.startsWith(PEACHZ_TITLE_BADGE)) {
+          document.title = PEACHZ_TITLE_BADGE + cur;
+        }
+      } else if (cur.startsWith(PEACHZ_TITLE_BADGE)) {
+        document.title = cur.slice(PEACHZ_TITLE_BADGE.length);
+      }
+    }
+
+    function dispatchSuiteHandoff(targetApp, url, windowName, onDone) {
+      try {
+        peachzSuiteBus?.postMessage({ type: 'handoff', targetApp, ts: Date.now() });
+      } catch (e) {}
+
+      const refs = (window.__peachzTabRefs = window.__peachzTabRefs || {});
+      const cached = refs[targetApp];
+      let sameSuiteTab = false;
+      if (cached && !cached.closed) {
+        try {
+          sameSuiteTab = cached.location && cached.location.origin === window.location.origin && cached.location.pathname.includes('/' + targetApp);
+        } catch (e) {
+          sameSuiteTab = false;
+        }
+      }
+      if (sameSuiteTab) {
+        try { cached.focus(); } catch (e) {}
+        if (typeof onDone === 'function') onDone('focused');
+        return Promise.resolve({ reused: true, focused: true });
+      }
+
+      return new Promise((resolve) => {
+        if (!peachzSuiteBus) {
+          const w = window.open(url, windowName || ('peachz_' + targetApp + '_tab'));
+          if (w) refs[targetApp] = w;
+          if (typeof onDone === 'function') onDone(w ? 'opened' : 'blocked');
+          resolve({ reused: false, focused: !!w });
+          return;
+        }
+
+        const reqId = PEACHZ_TAB_ID + '_' + Math.random().toString(36).slice(2);
+        let settled = false;
+        let timer = null;
+
+        const finishOpen = () => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          peachzSuiteBus.removeEventListener('message', onPong);
+          const w = window.open(url, windowName || ('peachz_' + targetApp + '_tab'));
+          if (w) refs[targetApp] = w;
+          if (typeof onDone === 'function') onDone(w ? 'opened' : 'blocked');
+          resolve({ reused: false, focused: !!w });
+        };
+
+        const onPong = (ev) => {
+          const d = ev && ev.data;
+          if (!d || d.type !== 'pong' || d.targetApp !== targetApp || d.reqId !== reqId) return;
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          peachzSuiteBus.removeEventListener('message', onPong);
+          try { peachzSuiteBus.postMessage({ type: 'handoff', targetApp, ts: Date.now() }); } catch (e) {}
+          if (typeof onDone === 'function') onDone('already_open');
+          resolve({ reused: true, focused: false });
+        };
+
+        peachzSuiteBus.addEventListener('message', onPong);
+        timer = setTimeout(finishOpen, 90);
+        try {
+          peachzSuiteBus.postMessage({ type: 'ping', targetApp, reqId });
+        } catch (e) {
+          finishOpen();
+        }
+      });
+    }
+
+    if (peachzSuiteBus) {
+      peachzSuiteBus.addEventListener('message', (ev) => {
+        const d = ev && ev.data;
+        if (!d || d.targetApp !== PEACHZ_SUITE_APP_ID) return;
+        if (d.type === 'ping') {
+          try {
+            peachzSuiteBus.postMessage({ type: 'pong', targetApp: PEACHZ_SUITE_APP_ID, reqId: d.reqId, senderTabId: PEACHZ_TAB_ID });
+          } catch (e) {}
+        } else if (d.type === 'handoff') {
+          checkNtIncomingHandoff();
+          if (document.hidden && readNtIncomingHandoff()) {
+            setSuiteTitleBadge(true);
+          }
+        }
+      });
+    }
+
+    function readNtIncomingHandoff() {
+      try {
+        const raw = localStorage.getItem('peachz_suite_handoff_v1');
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (!parsed || parsed.target !== 'noveltransstudio' || !parsed.content || !String(parsed.content).trim()) {
+          return null;
+        }
+        return parsed;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function checkNtIncomingHandoff() {
+      const banner = document.getElementById('ntHandoffBanner');
+      const meta = document.getElementById('ntHandoffMeta');
+      if (!banner || !meta) return;
+      const payload = readNtIncomingHandoff();
+      if (!payload) {
+        banner.classList.add('hidden');
+        setSuiteTitleBadge(false);
+        return;
+      }
+      const novelLabel = payload.translatedTitle || payload.novelTitle || 'ไม่ระบุเรื่อง';
+      const chOrder = payload.chapterOrder ? `ตอนที่ #${payload.chapterOrder}` : '';
+      const chTitle = payload.title ? ` — ${payload.title}` : '';
+      const charsFmt = String(payload.content).length.toLocaleString('th-TH');
+      meta.textContent = `เรื่อง: ${novelLabel} ${chOrder}${chTitle} (${charsFmt} ตัวอักษร)`;
+      banner.classList.remove('hidden');
+    }
+
+    function dismissNtIncomingHandoff() {
+      try {
+        const p = readNtIncomingHandoff();
+        if (p) localStorage.removeItem('peachz_suite_handoff_v1');
+      } catch (e) {}
+      document.getElementById('ntHandoffBanner')?.classList.add('hidden');
+      setSuiteTitleBadge(false);
+    }
+
+    function applyNtIncomingHandoff(autoTranslate = false) {
+      const payload = readNtIncomingHandoff();
+      if (!payload) {
+        checkNtIncomingHandoff();
+        return;
+      }
+
+      const norm = (s) => String(s || '').trim().toLowerCase();
+      const shelfTitles = [payload.novelTitle, payload.translatedTitle].map(norm).filter(Boolean);
+      if (shelfTitles.length && Array.isArray(state.novels)) {
+        const matched = state.novels.find((n) => {
+          const ntTitle = norm(n?.title);
+          return ntTitle && shelfTitles.some((st) => ntTitle === st || st.includes(ntTitle) || ntTitle.includes(st));
+        });
+        if (matched && matched.id !== state.activeNovelId) {
+          switchNovel(matched.id);
+        }
+      }
+
+      if (payload.chapterOrder !== undefined && payload.chapterOrder !== null) {
+        setChapter(payload.chapterOrder);
+      }
+
+      const origEl = document.getElementById('originalText');
+      const transEl = document.getElementById('translatedText');
+      if (origEl) origEl.value = String(payload.content || '');
+      if (transEl) transEl.value = '';
+      if (typeof saveDraftNow === 'function') saveDraftNow();
+
+      dismissNtIncomingHandoff();
+
+      if (autoTranslate && typeof translateAndAnalyze === 'function') {
+        translateAndAnalyze();
+      }
+    }
+
+    function sendBothToPome() {
+      const origEl = document.getElementById('originalText');
+      const transEl = document.getElementById('translatedText');
+      const originalText = String(origEl ? origEl.value : '').trim();
+      const translatedText = String(transEl ? transEl.value : '').trim();
+      if (!originalText && !translatedText) {
+        alert('ยังไม่มีทั้งต้นฉบับและคำแปลสำหรับส่งไปพี่ตูบครับ');
+        return;
+      }
+      const active = typeof getActiveNovel === 'function' ? getActiveNovel() : null;
+      const novelTitle = active && active.title ? active.title : 'NovelTrans';
+      const chapterNum = active && active.currentChapter ? active.currentChapter : 1;
+      try {
+        localStorage.setItem('peachz_suite_handoff_v1', JSON.stringify({
+          target: 'pomehelpmami',
+          sourceApp: 'NovelTrans Studio',
+          novelTitle,
+          chapterOrder: chapterNum,
+          title: `${novelTitle} - ตอนที่ ${chapterNum}`,
+          originalText,
+          translatedText,
+          content: translatedText || originalText,
+          preferredSlotName: 'Novel Trans',
+          createdAt: Date.now()
+        }));
+      } catch (err) {
+        console.error('sendBothToPome failed:', err);
+        alert('ไม่สามารถบันทึกข้อมูลส่งต่อไปพี่ตูบได้ครับ');
+        return;
+      }
+      dispatchSuiteHandoff('pomehelpmami', 'https://dblack-dev.github.io/pomehelpmami/?handoff=1', 'peachz_pome_tab', (status) => {
+        const btn = document.getElementById('btnSendToPome');
+        if (!btn) return;
+        const prev = btn.textContent;
+        btn.textContent = status === 'focused' ? 'สลับแท็บ ✓' : (status === 'already_open' ? 'ส่งไปแท็บเดิม 🔔' : 'ส่งแล้ว ✓');
+        setTimeout(() => { btn.textContent = prev || '🐶 ส่งไปพี่ตูบ'; }, 2200);
+      });
     }
 
     function copyTranslation() {
