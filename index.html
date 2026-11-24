@@ -125,6 +125,39 @@
         <span id="apiStatusDot" class="w-2 h-2 rounded-full bg-red-500"></span>
       </button>
 
+      <!-- Peachz Suite Switcher -->
+      <div id="peachzSuiteMenuWrap" class="relative shrink-0">
+        <button id="btnPeachzSuiteMenu" type="button" onclick="togglePeachzSuiteMenu(event)" title="สลับไปยังแอปอื่นใน Peachz Suite"
+          class="text-xs sm:text-sm bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-semibold px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 transition flex items-center gap-1">
+          <span>🍑 แอป</span>
+          <span class="text-[10px] opacity-75">▾</span>
+        </button>
+        <div id="peachzSuiteDropdown" class="hidden absolute right-0 mt-2 w-60 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-xl p-1.5 z-50 text-xs space-y-0.5">
+          <div class="px-2.5 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wide">Peachz Writer &amp; Reader Suite</div>
+          <a href="https://dblack-dev.github.io/peachz-shelf/" class="flex items-center justify-between gap-2 px-2.5 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition">
+            <span>📚 Peachz Shelf</span>
+            <span class="text-[10px] text-slate-400">ชั้นอ่าน</span>
+          </a>
+          <a href="https://dblack-dev.github.io/pomehelpmami/" class="flex items-center justify-between gap-2 px-2.5 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition">
+            <span>🐶 น้องหมาช่วยแปล (3 AI)</span>
+            <span class="text-[10px] text-slate-400">เทียบแปล</span>
+          </a>
+          <div class="flex items-center justify-between gap-2 px-2.5 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-200 font-semibold">
+            <span>📖 NovelTrans Studio</span>
+            <span class="text-[10px]">ใช้อยู่</span>
+          </div>
+          <a href="https://dblack-dev.github.io/peachz-pwa/" class="flex items-center justify-between gap-2 px-2.5 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition">
+            <span>🍑 Peachz Haus Studio</span>
+            <span class="text-[10px] text-slate-400">จัดหน้า</span>
+          </a>
+          <div class="border-t border-slate-200 dark:border-slate-700 my-1"></div>
+          <div class="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl text-slate-400 opacity-65 cursor-default">
+            <span>🧬 Peachz Hub</span>
+            <span class="text-[10px]">เฟส 2 เร็วๆ นี้</span>
+          </div>
+        </div>
+      </div>
+
       <!-- Google Auth & Cloud Sync -->
       <div id="ntAuthContainer" class="relative shrink-0">
         <button id="btnGoogleLogin" type="button" title="เข้าสู่ระบบด้วย Google เพื่อซิงค์ข้อมูล"
@@ -219,6 +252,7 @@
             <div class="flex items-center gap-1.5 shrink-0">
               <button onclick="openPolishModal()" class="text-xs bg-purple-50 dark:bg-purple-900/50 border border-purple-200 dark:border-purple-700 hover:bg-purple-100 dark:hover:bg-purple-800/60 px-2 py-0.5 rounded text-purple-700 dark:text-purple-200 font-medium">✨ เกลาสำนวน</button>
               <button onclick="exportChapterText()" class="text-xs bg-emerald-50 dark:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-700 hover:bg-emerald-100 dark:hover:bg-emerald-800/60 px-2 py-0.5 rounded text-emerald-700 dark:text-emerald-200 font-medium">💾 เซฟ .txt</button>
+              <button id="btnSendToPeachzHaus" type="button" onclick="sendTranslationToPeachzHaus()" class="text-xs bg-rose-50 dark:bg-rose-900/50 border border-rose-200 dark:border-rose-700 hover:bg-rose-100 dark:hover:bg-rose-800/60 px-2 py-0.5 rounded text-rose-700 dark:text-rose-200 font-medium" title="ส่งคำแปลบทนี้ไปจัดหน้าใน Peachz Haus Studio">🍑 ส่งไปจัดหน้า</button>
               <button onclick="copyTranslation()" id="copyBtn" class="text-xs bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600 px-2 py-0.5 rounded text-slate-700 dark:text-slate-200">คัดลอก</button>
             </div>
           </div>
@@ -2230,6 +2264,64 @@
       saveDraftNow();
       changeChapter(1);
       document.getElementById('originalText').focus();
+    }
+
+    function closePeachzSuiteMenu() {
+      const dd = document.getElementById('peachzSuiteDropdown');
+      const btn = document.getElementById('btnPeachzSuiteMenu');
+      if (dd) dd.classList.add('hidden');
+      if (btn) btn.setAttribute('aria-expanded', 'false');
+    }
+
+    function togglePeachzSuiteMenu(event) {
+      if (event && event.stopPropagation) event.stopPropagation();
+      const dd = document.getElementById('peachzSuiteDropdown');
+      const btn = document.getElementById('btnPeachzSuiteMenu');
+      if (!dd) return;
+      const willOpen = dd.classList.contains('hidden');
+      dd.classList.toggle('hidden', !willOpen);
+      if (btn) btn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+    }
+
+    if (!window.__peachzSuiteMenuOutsideBound) {
+      window.__peachzSuiteMenuOutsideBound = true;
+      document.addEventListener('click', (e) => {
+        const wrap = document.getElementById('peachzSuiteMenuWrap');
+        if (wrap && !wrap.contains(e.target)) closePeachzSuiteMenu();
+      });
+    }
+
+    function sendTranslationToPeachzHaus() {
+      const elText = document.getElementById('translatedText');
+      const text = elText ? elText.value : '';
+      if (!text || !text.trim()) {
+        alert('ยังไม่มีคำแปลภาษาไทยสำหรับส่งครับ');
+        return;
+      }
+      const active = typeof getActiveNovel === 'function' ? getActiveNovel() : null;
+      const novelTitle = active && active.title ? active.title : 'NovelTrans';
+      const chapterNum = active && active.currentChapter ? active.currentChapter : 1;
+      const title = `${novelTitle} - ตอนที่ ${chapterNum}`;
+      try {
+        localStorage.setItem('peachz_suite_handoff_v1', JSON.stringify({
+          target: 'peachz-pwa',
+          sourceApp: 'NovelTrans Studio',
+          title,
+          content: text,
+          createdAt: Date.now()
+        }));
+      } catch (err) {
+        console.error('Handoff write failed:', err);
+        alert('ไม่สามารถบันทึกข้อมูลสำหรับส่งต่อได้ครับ');
+        return;
+      }
+      window.open('https://dblack-dev.github.io/peachz-pwa/?handoff=1', '_blank', 'noopener');
+      const btn = document.getElementById('btnSendToPeachzHaus');
+      if (btn) {
+        const prev = btn.textContent;
+        btn.textContent = 'ส่งแล้ว ✓';
+        setTimeout(() => { btn.textContent = prev || '🍑 ส่งไปจัดหน้า'; }, 1800);
+      }
     }
 
     function copyTranslation() {
