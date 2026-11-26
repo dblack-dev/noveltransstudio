@@ -114,6 +114,7 @@
       <div class="flex items-center gap-1 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg pl-2 pr-1 py-1">
         <span class="text-xs" title="สลับโมเดล">🤖</span>
         <select id="quickModelSelect" onchange="switchActiveModel(this.value)" class="text-xs sm:text-sm font-medium bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 focus:outline-none max-w-[150px] truncate cursor-pointer"></select>
+        <button id="quickRefreshModelsBtn" type="button" onclick="fetchLatestGeminiModels(false)" title="โหลดรายชื่อโมเดล Gemini ล่าสุดจาก API" class="text-xs px-1.5 py-0.5 rounded hover:bg-slate-100 dark:hover:bg-slate-600 text-indigo-600 dark:text-indigo-300 transition">🔄</button>
       </div>
 
       <button onclick="toggleDarkMode()" id="darkModeBtn" title="สลับโหมดมืด/สว่าง" class="text-sm bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 transition">
@@ -615,7 +616,10 @@
 
         <div class="space-y-2.5">
           <div>
-            <label class="block font-semibold mb-1 dark:text-slate-200">🤖 ชื่อโมเดล (พิมพ์รุ่นใหม่ได้ไม่จำกัด — ระบบจะจำไว้ให้อัตโนมัติ)</label>
+            <div class="flex items-center justify-between gap-2 mb-1">
+              <label class="block font-semibold dark:text-slate-200">🤖 ชื่อโมเดล (พิมพ์รุ่นใหม่ได้ไม่จำกัด — ระบบจะจำไว้ให้อัตโนมัติ)</label>
+              <button type="button" id="ntFetchModelsBtn" onclick="fetchLatestGeminiModels(false)" class="text-xs bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-700 px-2.5 py-1 rounded-lg font-medium shrink-0 transition">🔄 โหลดโมเดลล่าสุด</button>
+            </div>
             <input type="text" id="apiModel" list="modelSuggestions" placeholder="เช่น gemini-2.5-flash, gemini-3-flash, gemini-4..." class="w-full border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 dark:text-slate-100 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500">
             <datalist id="modelSuggestions"></datalist>
             <div id="modelQuickPills" class="flex flex-wrap gap-1.5 mt-2"></div>
@@ -855,6 +859,10 @@
       updateApiStatusDot();
       renderNovelUI();
       checkNtIncomingHandoff();
+      const ntSyncAt = Number(localStorage.getItem('nt_gemini_models_sync_at') || 0);
+      if (state.provider === 'gemini' && state.apiKey && (Date.now() - ntSyncAt) > 86400000) {
+        fetchLatestGeminiModels(true);
+      }
     });
 
     const onNtFocusOrVisible = () => {
@@ -981,6 +989,92 @@
         `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`
       ).join('');
       modelSelect.value = state.model;
+      const qRefresh = document.getElementById('quickRefreshModelsBtn');
+      if (qRefresh) qRefresh.classList.toggle('hidden', state.provider !== 'gemini');
+    }
+
+    function parseGeminiVersionScore(id) {
+      const m = String(id || '').match(/gemini-(\d+(?:\.\d+)?)/i);
+      return m ? parseFloat(m[1]) : 0;
+    }
+
+    async function queryGeminiModelsList(apiKey) {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=${encodeURIComponent(apiKey)}`);
+      const data = await safeParseResponseJson(res);
+      if (!res.ok || !Array.isArray(data?.models)) return [];
+      const blocked = /(embedding|imagen|veo|tts|-image|aqa|robotics|native-audio|computer-use)/i;
+      const list = data.models
+        .filter(m => {
+          const id = String(m.name || '').replace(/^models\//, '');
+          const methods = Array.isArray(m.supportedGenerationMethods) ? m.supportedGenerationMethods : [];
+          return id.startsWith('gemini-') && !blocked.test(id) && methods.includes('generateContent');
+        })
+        .map(m => String(m.name || '').replace(/^models\//, ''));
+      return list.sort((a, b) => {
+        const diff = parseGeminiVersionScore(b) - parseGeminiVersionScore(a);
+        if (diff !== 0) return diff;
+        const scoreTier = (s) => (s.includes('flash') && !s.includes('lite') ? 3 : s.includes('pro') ? 2 : s.includes('flash-lite') ? 1 : 0);
+        return scoreTier(b) - scoreTier(a) || a.localeCompare(b);
+      });
+    }
+
+    let ntFetchingModels = false;
+    async function fetchLatestGeminiModels(silent = false) {
+      if (ntFetchingModels) return;
+      const modalOpen = !document.getElementById('settingsModal')?.classList.contains('hidden');
+      const modalProv = modalOpen ? document.getElementById('apiProvider')?.value : state.provider;
+      let key = '';
+      if (modalOpen && modalProv === 'gemini') {
+        key = document.getElementById('apiKeyInput')?.value.trim() || '';
+      }
+      if (!key) {
+        if (state.provider === 'gemini' && state.apiKey) key = state.apiKey;
+        else key = (state.savedKeys.find(k => k.provider === 'gemini' && k.key)?.key || '').trim();
+      }
+      if (!key) {
+        if (!silent) alert('กรุณาใส่ Gemini API Key ก่อนโหลดรายชื่อโมเดล');
+        return;
+      }
+      ntFetchingModels = true;
+      const btns = [document.getElementById('ntFetchModelsBtn'), document.getElementById('quickRefreshModelsBtn')].filter(Boolean);
+      btns.forEach(b => { b.disabled = true; b.classList.add('opacity-50'); });
+      try {
+        const live = await queryGeminiModelsList(key);
+        if (live.length === 0) {
+          if (!silent) alert('ไม่พบรายชื่อโมเดลจาก Gemini API หรือ API Key ไม่ถูกต้อง');
+          return;
+        }
+        const existing = Array.isArray(state.savedModels.gemini) ? state.savedModels.gemini : [];
+        const merged = [];
+        live.forEach(m => { if (!merged.includes(m)) merged.push(m); });
+        existing.forEach(m => { if (!merged.includes(m)) merged.push(m); });
+        state.savedModels.gemini = merged;
+        localStorage.setItem('nt_gemini_models_sync_at', String(Date.now()));
+        saveApiState();
+        renderModelSuggestions('gemini');
+        renderQuickSwitchers();
+        if (!silent) showToast(`อัปเดตรายชื่อโมเดล Gemini ล่าสุดแล้ว ${live.length} รุ่น 🤖`);
+      } catch (e) {
+        if (!silent) alert('โหลดรายชื่อโมเดลไม่สำเร็จ: ' + (e?.message || e));
+      } finally {
+        ntFetchingModels = false;
+        btns.forEach(b => { b.disabled = false; b.classList.remove('opacity-50'); });
+      }
+    }
+
+    async function pickFallbackGeminiModel(failedModel, apiKey) {
+      let pool = [];
+      try { pool = await queryGeminiModelsList(apiKey); } catch (_) {}
+      if (pool.length > 0) {
+        const merged = [...new Set([...pool, ...(state.savedModels.gemini || [])])];
+        state.savedModels.gemini = merged;
+        localStorage.setItem('nt_gemini_models_sync_at', String(Date.now()));
+      }
+      const candidates = [...new Set([...pool, ...(state.savedModels.gemini || [])])].filter(m => m && m !== failedModel);
+      return candidates.find(m => m.includes('flash') && !m.includes('lite'))
+        || candidates.find(m => m.includes('flash'))
+        || candidates[0]
+        || null;
     }
 
     function switchActiveKey(keyId) {
@@ -1695,6 +1789,8 @@
 
     function toggleThinkingGroup(provider) {
       document.getElementById('geminiThinkingGroup').classList.toggle('hidden', provider !== 'gemini');
+      const fetchBtn = document.getElementById('ntFetchModelsBtn');
+      if (fetchBtn) fetchBtn.classList.toggle('hidden', provider !== 'gemini');
     }
 
     function onProviderChange() {
@@ -2854,6 +2950,24 @@
         if (!res.ok && shouldTryThinking && res.status === 400) {
           console.warn('Model rejected thinkingConfig, retrying with Auto-Fallback...', res.data?.error?.message);
           res = await callGeminiRequest(systemPrompt, userPrompt, false);
+        }
+
+        const deadErrMsg = res.data?.error?.message || '';
+        const isModelDead = !res.ok && (res.status === 404 || (res.status === 400 && /not found|deprecated|no longer/i.test(deadErrMsg)));
+        if (isModelDead) {
+          const fallbackModel = await pickFallbackGeminiModel(state.model, state.apiKey);
+          if (fallbackModel) {
+            state.model = fallbackModel;
+            res = await callGeminiRequest(systemPrompt, userPrompt, shouldTryThinking);
+            if (!res.ok && shouldTryThinking && res.status === 400) {
+              res = await callGeminiRequest(systemPrompt, userPrompt, false);
+            }
+            if (res.ok) {
+              saveApiState();
+              renderQuickSwitchers();
+              showToast(`โมเดลเดิมถูกปิดใช้งาน ระบบสลับเป็น ${fallbackModel} ให้อัตโนมัติ 🔄`);
+            }
+          }
         }
 
         if (!res.ok) throw new Error(res.data?.error?.message || `Gemini API Error (HTTP ${res.status})`);
